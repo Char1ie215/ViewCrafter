@@ -1,10 +1,10 @@
 import sys
-sys.path.append('./extern/dust3r')
-from dust3r.inference import inference, load_model
-from dust3r.utils.image import load_images
-from dust3r.image_pairs import make_pairs
-from dust3r.cloud_opt import global_aligner, GlobalAlignerMode
-from dust3r.utils.device import to_numpy
+sys.path.insert(0,'/home/haonan/direct_human_demo/third_party/ViewCrafter/extern')
+from third_party.ViewCrafter.extern.dust3r.dust3r.inference import inference, load_model
+from third_party.ViewCrafter.extern.dust3r.dust3r.utils.image import load_images
+from third_party.ViewCrafter.extern.dust3r.dust3r.image_pairs import make_pairs
+from third_party.ViewCrafter.extern.dust3r.dust3r.cloud_opt import global_aligner, GlobalAlignerMode
+from third_party.ViewCrafter.extern.dust3r.dust3r.utils.device import to_numpy
 import trimesh
 import torch
 import numpy as np
@@ -19,10 +19,12 @@ from torchvision.utils import save_image
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from PIL import Image
-from utils.pvd_utils import *
+# from third_party.ViewCrafter.utils.pvd_utils import *
+from third_party.ViewCrafter.utils.pvd_utils import *
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
-from utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
+# from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
+from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
 from pathlib import Path
 from torchvision.utils import save_image
 
@@ -35,6 +37,7 @@ class ViewCrafter:
         # initialize ref images, pcd
         if not gradio:
             self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
+            # self.images, self.img_ori = self.opts.image
             self.run_dust3r(input_images=self.images)
         
     def run_dust3r(self, input_images,clean_pc = False):

@@ -1,13 +1,13 @@
 python inference.py \
---image_dir test/images/boy.png \
+--image_dir test/images/4_last_frame.png \
 --out_dir ./output \
---traj_txt test/trajs/loop2.txt \
---mode 'single_view_txt' \
+--traj_txt None \
+--mode 'single_view_target' \
 --center_scale 1. \
---elevation=5 \
+--elevation=0 \
 --seed 123 \
---d_theta -30  \
---d_phi 45 \
+--d_theta 10  \
+--d_phi 30 \
 --d_r -.2   \
 --d_x 50   \
 --d_y 25   \
