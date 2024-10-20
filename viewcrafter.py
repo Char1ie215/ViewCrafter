@@ -34,7 +34,7 @@ class ViewCrafter:
         self.opts = opts
         self.device = opts.device
         self.setup_dust3r()
-        self.setup_diffusion()
+        # self.setup_diffusion()
         # initialize ref images, pcd
         if not gradio:
             self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
@@ -48,7 +48,7 @@ class ViewCrafter:
         mode = GlobalAlignerMode.PointCloudOptimizer #if len(self.images) > 2 else GlobalAlignerMode.PairViewer
         scene = global_aligner(output, device=self.device, mode=mode)
         if mode == GlobalAlignerMode.PointCloudOptimizer:
-            loss = scene.compute_global_alignment(init='mst', niter=self.opts.niter, schedule=self.opts.schedule, lr=self.opts.lr)
+            loss = scene.compute_global_alignment(init='mst', niter=10, schedule='cosine', lr=0.01)
 
         if clean_pc:
             self.scene = scene.clean_pointcloud()
@@ -109,7 +109,7 @@ class ViewCrafter:
         focals = self.scene.get_focals().detach()[1:] 
         shape = self.images[0]['true_shape']
         H, W = int(shape[0][0]), int(shape[0][1])
-        pcd = [i.detach() for i in self.scene.get_pts3d(clip_thred=self.opts.dpt_trd)] # a list of points of size whc
+        pcd = [i.detach() for i in self.scene.get_pts3d(clip_thred=None)] # a list of points of size whc
         depth = [i.detach() for i in self.scene.get_depthmaps()]
         depth_avg = depth[-1][H//2,W//2] 
         radius = depth_avg*self.opts.center_scale 
@@ -160,10 +160,10 @@ class ViewCrafter:
                 
         save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
         save_pointcloud_with_normals([imgs[-1]], [pcd[-1]], msk=None, save_path=os.path.join(self.opts.save_dir,'pcd0.ply') , mask_pc=False, reduce_pc=False)
-        diffusion_results = self.run_diffusion(render_results)
-        save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
+        # diffusion_results = self.run_diffusion(render_results)
+        # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
 
-        return diffusion_results
+        # return diffusion_results
 
     def nvs_sparse_view(self,iter):
 
@@ -427,3 +427,40 @@ class ViewCrafter:
         gen_dir = os.path.join(self.opts.save_dir, "diffusion0.mp4")
         
         return traj_dir, gen_dir
+
+if __name__ == "__main__":
+    from omegaconf import OmegaConf
+    import os
+    path = os.getcwd()
+    new = '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter'
+    os.chdir(new)
+    opts = OmegaConf.create({
+        'image_dir': 'test/images/4_last_frame.png',  
+        'out_dir': './output',  
+        'traj_txt': None,
+        'mode': 'single_view_target',
+        'center_scale': 1.0,
+        'elevation': 0,
+        'seed': 123,
+        'd_theta': [15],
+        'd_phi': [30],
+        'd_r': [-0.2],
+        'd_x': [50],
+        'd_y': [25],
+        'batch_size': 8,
+        'ckpt_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/checkpoints/model.ckpt',
+        'config': 'configs/inference_pvd_1024.yaml',
+        'ddim_steps': 50,
+        'video_length': 25,
+        'device': 'cuda:0',
+        'height': 576,
+        'width': 1024,
+        'model_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
+    })
+    # os.chdir(path)
+    opts.save_dir = os.path.join(opts.out_dir, 'test_case_output')
+    os.makedirs(opts.save_dir, exist_ok=True)
+
+    pvd = ViewCrafter(opts)
+
+    pvd.nvs_single_view()
