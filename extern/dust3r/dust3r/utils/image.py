@@ -24,12 +24,12 @@ def center_crop_pil_image(input_image, target_width=1024, target_height=576):
         h = int(h / w_ratio)
         if h < target_height:
             h = target_height
-        input_image = input_image.resize((target_width, h), Image.ANTIALIAS)
+        input_image = input_image.resize((target_width, h), PIL.Image.LANCZOS)
     else:
         w = int(w / h_ratio)
         if w < target_width:
             w = target_width
-        input_image = input_image.resize((w, target_height), Image.ANTIALIAS)
+        input_image = input_image.resize((w, target_height), PIL.Image.LANCZOS)
 
     return ImageOps.fit(input_image, (target_width, target_height), Image.BICUBIC)
 

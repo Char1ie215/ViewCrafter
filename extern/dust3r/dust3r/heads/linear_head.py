@@ -6,7 +6,7 @@
 # --------------------------------------------------------
 import torch.nn as nn
 import torch.nn.functional as F
-from dust3r.heads.postprocess import postprocess
+from third_party.ViewCrafter.extern.dust3r.dust3r.heads.postprocess import postprocess
 
 
 class LinearPts3d (nn.Module):
