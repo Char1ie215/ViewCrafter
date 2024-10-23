@@ -1,7 +1,7 @@
 import sys
 sys.path.insert(0,'/home/haonan/direct_human_demo/third_party/ViewCrafter/extern')
 from third_party.ViewCrafter.extern.dust3r.dust3r.inference import inference, load_model
-from third_party.ViewCrafter.extern.dust3r.dust3r.utils.image import load_images
+from third_party.ViewCrafter.extern.dust3r.dust3r.utils.image import load_images, process_images_directly
 from third_party.ViewCrafter.extern.dust3r.dust3r.image_pairs import make_pairs
 from third_party.ViewCrafter.extern.dust3r.dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 from third_party.ViewCrafter.extern.dust3r.dust3r.utils.device import to_numpy
@@ -28,6 +28,7 @@ from pytorch_lightning import seed_everything
 from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
 from pathlib import Path
 from torchvision.utils import save_image
+import base64
 
 class ViewCrafter:
     def __init__(self, opts, gradio = False):
@@ -37,8 +38,8 @@ class ViewCrafter:
         # self.setup_diffusion()
         # initialize ref images, pcd
         if not gradio:
-            self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
-            # self.images, self.img_ori = self.opts.image
+            # self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
+            self.images, self.img_ori = self.process_initial_images(image = self.opts.image, shape = self.opts.image_shape)
             self.run_dust3r(input_images=self.images)
         
     def run_dust3r(self, input_images,clean_pc = False):
@@ -163,7 +164,7 @@ class ViewCrafter:
         # diffusion_results = self.run_diffusion(render_results)
         # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
 
-        # return diffusion_results
+        return render_results
 
     def nvs_sparse_view(self,iter):
 
@@ -384,6 +385,24 @@ class ViewCrafter:
             images[1]['idx'] = 1
 
         return images, img_ori
+    
+    def process_initial_images(self, image, shape):
+        ## load images
+        ## dict_keys(['img', 'true_shape', 'idx', 'instance', 'img_ori']),张量形式
+        image = base64.b64decode(image)
+        shape = tuple(shape)
+        restored_tensor = torch.from_numpy(np.frombuffer(image, dtype=np.float32)).reshape(shape)
+        restored_tensor = restored_tensor.numpy().astype(np.uint8)
+
+        img = Image.fromarray(restored_tensor)
+        images = process_images_directly(img, size=512,force_1024 = True)
+        img_ori = (images[0]['img_ori'].squeeze(0).permute(1,2,0)+1.)/2. # [576,1024,3] [0,1]
+
+        if len(images) == 1:
+            images = [images[0], copy.deepcopy(images[0])]
+            images[1]['idx'] = 1
+
+        return images, img_ori
 
     def load_initial_dir(self, image_dir):
 
@@ -434,8 +453,21 @@ if __name__ == "__main__":
     path = os.getcwd()
     new = '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter'
     os.chdir(new)
+    data = Image.open('test/images/4_last_frame.png').convert('RGB')
+    transform=transforms.Compose([transforms.ToTensor(),])
+    data = transform(data)
+    data = data.permute(1, 2, 0)
+    data = data*255
+    # first_frame = data[0,0,:,:,:]
+    shape = tuple(data.shape)
+    bytes_frame = data.numpy().tobytes()
+    str_frame = base64.b64encode(bytes_frame).decode('utf-8')
+    # first_frame = first_frame.numpy().astype(np.uint8)
+    # img = Image.fromarray(first_frame)
     opts = OmegaConf.create({
         'image_dir': 'test/images/4_last_frame.png',  
+        'image': str_frame,
+        'image_shape': shape,
         'out_dir': './output',  
         'traj_txt': None,
         'mode': 'single_view_target',

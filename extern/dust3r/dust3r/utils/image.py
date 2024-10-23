@@ -139,6 +139,37 @@ def load_images(folder_or_list, size, square_ok=False,force_1024 = False):
     print(f' (Found {len(imgs)} images)')
     return imgs
 
+def process_images_directly(img, size, square_ok=False,force_1024 = False):
+        imgs = []
+        if force_1024:
+            img = center_crop_pil_image(img)
+        img_ori = img
+        W1, H1 = img.size
+        if size == 224:
+            # resize short side to 224 (then crop)
+            img = _resize_pil_image(img, round(size * max(W1/H1, H1/W1)))
+        else:
+            # resize long side to 512
+            img = _resize_pil_image(img, size)
+        W, H = img.size
+        cx, cy = W//2, H//2
+        if size == 224:
+            half = min(cx, cy)
+            img = img.crop((cx-half, cy-half, cx+half, cy+half))
+        else:
+            halfw, halfh = ((2*cx)//16)*8, ((2*cy)//16)*8
+            if not (square_ok) and W == H:
+                halfh = 3*halfw/4
+            img = img.crop((cx-halfw, cy-halfh, cx+halfw, cy+halfh))
+
+        W2, H2 = img.size
+        print(f' - adding with resolution {W1}x{H1} --> {W2}x{H2}')
+        imgs.append(dict(img=ImgNorm(img)[None], true_shape=np.int32(
+            [img.size[::-1]]), idx=len(imgs), instance=str(len(imgs)), img_ori=ImgNorm(img_ori)[None], ))
+        
+        return imgs
+    
+    
 def load_images_base(folder_or_list, folder_name, size, square_ok=False):
     """ open and convert all images in a list or folder to proper input format for DUSt3R
     """
