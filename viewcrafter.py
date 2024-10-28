@@ -1,7 +1,7 @@
 import sys
 sys.path.insert(0,'/home/haonan/direct_human_demo/third_party/ViewCrafter/extern')
 from third_party.ViewCrafter.extern.dust3r.dust3r.inference import inference, load_model
-from third_party.ViewCrafter.extern.dust3r.dust3r.utils.image import load_images, process_images_directly
+from third_party.ViewCrafter.extern.dust3r.dust3r.utils.image import load_images, process_images_directly, process_two_images_directly
 from third_party.ViewCrafter.extern.dust3r.dust3r.image_pairs import make_pairs
 from third_party.ViewCrafter.extern.dust3r.dust3r.cloud_opt import global_aligner, GlobalAlignerMode
 from third_party.ViewCrafter.extern.dust3r.dust3r.utils.device import to_numpy
@@ -39,8 +39,9 @@ class ViewCrafter:
         # initialize ref images, pcd
         if not gradio:
             # self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
+            # self.images, self.img_ori = self.process_two_images(image = self.opts.image, image1= self.opts.image2, shape = self.opts.image_shape)
             self.images, self.img_ori = self.process_initial_images(image = self.opts.image, shape = self.opts.image_shape)
-            self.run_dust3r(input_images=self.images)
+            self.run_dust3r(input_images=self.images, clean_pc=True)
         
     def run_dust3r(self, input_images,clean_pc = False):
         pairs = make_pairs(input_images, scene_graph='complete', prefilter=None, symmetrize=True)
@@ -89,14 +90,14 @@ class ViewCrafter:
 
     
     def run_diffusion(self, renderings):
-
-        prompts = [self.opts.prompt]
+        prompts = []
+        # prompts = [self.opts.prompt]
         videos = (renderings * 2. - 1.).permute(3,0,1,2).unsqueeze(0).to(self.device)
         condition_index = [0]
         with torch.no_grad(), torch.cuda.amp.autocast():
             # [1,1,c,t,h,w]
             batch_samples = image_guided_synthesis(self.diffusion, prompts, videos, self.noise_shape, self.opts.n_samples, self.opts.ddim_steps, self.opts.ddim_eta, \
-                               self.opts.unconditional_guidance_scale, self.opts.cfg_img, self.opts.frame_stride, self.opts.text_input, self.opts.multiple_cond_cfg, self.opts.timestep_spacing, self.opts.guidance_rescale, condition_index)
+                               unconditional_guidance_scale=1.0, cfg_img=None, fs=10, text_input=False, multiple_cond_cfg=False, timestep_spacing='uniform', guidance_rescale=0.0, condition_index = condition_index)
 
             # save_results_seperate(batch_samples[0], self.opts.save_dir, fps=8)
             # torch.Size([1, 3, 25, 576, 1024]) [-1,1]
@@ -226,10 +227,10 @@ class ViewCrafter:
 
         save_video(render_results, os.path.join(self.opts.save_dir, f'render{iter}.mp4'))
         save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd{iter}.ply') , mask_pc=True, reduce_pc=False)
-        diffusion_results = self.run_diffusion(render_results)
-        save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion{iter}.mp4'))
+        # diffusion_results = self.run_diffusion(render_results)
+        # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion{iter}.mp4'))
         # torch.Size([25, 576, 1024, 3])
-        return diffusion_results
+        return render_results
     
     def nvs_sparse_view_interp(self):
 
@@ -238,7 +239,7 @@ class ViewCrafter:
         focals = self.scene.get_focals().detach()
         shape = self.images[0]['true_shape']
         H, W = int(shape[0][0]), int(shape[0][1])
-        pcd = [i.detach() for i in self.scene.get_pts3d(clip_thred=self.opts.dpt_trd)] # a list of points of size whc
+        pcd = [i.detach() for i in self.scene.get_pts3d(clip_thred=None)] # a list of points of size whc
         depth = [i.detach() for i in self.scene.get_depthmaps()]
 
         if len(self.images) == 2:
@@ -265,16 +266,16 @@ class ViewCrafter:
         save_video(render_results, os.path.join(self.opts.save_dir, f'render.mp4'))
         save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd.ply') , mask_pc=mask_pc, reduce_pc=False)
 
-        diffusion_results = []
-        print(f'Generating {len(self.img_ori)-1} clips\n')
-        for i in range(len(self.img_ori)-1 ):
-            print(f'Generating clip {i} ...\n')
-            diffusion_results.append(self.run_diffusion(render_results[i*(self.opts.video_length - 1):self.opts.video_length+i*(self.opts.video_length - 1)]))
-        print(f'Finish!\n')
-        diffusion_results = torch.cat(diffusion_results)
-        save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion.mp4'))
+        # diffusion_results = []
+        # print(f'Generating {len(self.img_ori)-1} clips\n')
+        # for i in range(len(self.img_ori)-1 ):
+        #     print(f'Generating clip {i} ...\n')
+        #     diffusion_results.append(self.run_diffusion(render_results[i*(self.opts.video_length - 1):self.opts.video_length+i*(self.opts.video_length - 1)]))
+        # print(f'Finish!\n')
+        # diffusion_results = torch.cat(diffusion_results)
+        # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion.mp4'))
         # torch.Size([25, 576, 1024, 3])
-        return diffusion_results
+        return render_results
 
     def nvs_single_view_ref_iterative(self):
 
@@ -360,7 +361,7 @@ class ViewCrafter:
         model = instantiate_from_config(model_config)
         model = model.to(self.device)
         model.cond_stage_model.device = self.device
-        model.perframe_ae = self.opts.perframe_ae
+        # model.perframe_ae = self.opts.perframe_ae
         assert os.path.exists(self.opts.ckpt_path), "Error: checkpoint Not Found!"
         model = load_model_checkpoint(model, self.opts.ckpt_path)
         model.eval()
@@ -369,7 +370,7 @@ class ViewCrafter:
         h, w = self.opts.height // 8, self.opts.width // 8
         channels = model.model.diffusion_model.out_channels
         n_frames = self.opts.video_length
-        self.noise_shape = [self.opts.bs, channels, n_frames, h, w]
+        self.noise_shape = [self.opts.batch_size, channels, n_frames, h, w]
 
     def setup_dust3r(self):
         self.dust3r = load_model(self.opts.model_path, self.device)
@@ -403,6 +404,28 @@ class ViewCrafter:
             images[1]['idx'] = 1
 
         return images, img_ori
+    
+    def process_two_images(self, image, image1, shape):
+        ## load images
+        ## dict_keys(['img', 'true_shape', 'idx', 'instance', 'img_ori']),张量形式
+        image = base64.b64decode(image)
+        image1 = base64.b64decode(image1)
+        shape = tuple(shape)
+        restored_tensor = torch.from_numpy(np.frombuffer(image, dtype=np.float32)).reshape(shape)
+        restored_tensor = restored_tensor.numpy().astype(np.uint8)
+        restored_tensor1 = torch.from_numpy(np.frombuffer(image1, dtype=np.float32)).reshape(shape)
+        restored_tensor1 = restored_tensor1.numpy().astype(np.uint8)
+
+        img = Image.fromarray(restored_tensor)
+        img1 = Image.fromarray(restored_tensor1)
+        images = process_two_images_directly(img, img1, size=512,force_1024 = True)
+        # img_ori = (images[0]['img_ori'].squeeze(0).permute(1,2,0)+1.)/2. # [576,1024,3] [0,1]
+
+        img_gts = []
+        img_gts.append((images[0]['img_ori'].squeeze(0).permute(1,2,0)+1.)/2.)
+        img_gts.append((images[1]['img_ori'].squeeze(0).permute(1,2,0)+1.)/2.)
+
+        return images, img_gts
 
     def load_initial_dir(self, image_dir):
 
@@ -453,40 +476,50 @@ if __name__ == "__main__":
     path = os.getcwd()
     new = '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter'
     os.chdir(new)
-    data = Image.open('test/images/4_last_frame.png').convert('RGB')
+    data = Image.open('test/images/output.png').convert('RGB')
+    data2 = Image.open('test/images/output3.png').convert('RGB')
     transform=transforms.Compose([transforms.ToTensor(),])
     data = transform(data)
+    data2 = transform(data2)
     data = data.permute(1, 2, 0)
     data = data*255
+    data2 = data2.permute(1, 2, 0)
+    data2 = data2*255
     # first_frame = data[0,0,:,:,:]
     shape = tuple(data.shape)
     bytes_frame = data.numpy().tobytes()
     str_frame = base64.b64encode(bytes_frame).decode('utf-8')
+    bytes_frame2 = data2.numpy().tobytes()
+    str_frame2 = base64.b64encode(bytes_frame2).decode('utf-8')
     # first_frame = first_frame.numpy().astype(np.uint8)
     # img = Image.fromarray(first_frame)
     opts = OmegaConf.create({
-        'image_dir': 'test/images/4_last_frame.png',  
+        # 'image_dir': 'test/images/4_last_frame.png',  
         'image': str_frame,
+        'image2': str_frame2,
         'image_shape': shape,
         'out_dir': './output',  
         'traj_txt': None,
         'mode': 'single_view_target',
+        'bg_trd': 0.2,
         'center_scale': 1.0,
         'elevation': 0,
         'seed': 123,
+        'n_samples': 1,
         'd_theta': [15],
-        'd_phi': [30],
-        'd_r': [-0.2],
+        'd_phi': [10],
+        'd_r': [0.2],
         'd_x': [50],
         'd_y': [25],
-        'batch_size': 8,
-        'ckpt_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/checkpoints/model.ckpt',
+        'batch_size': 1,
+        'ckpt_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/model.ckpt',
         'config': 'configs/inference_pvd_1024.yaml',
         'ddim_steps': 50,
         'video_length': 25,
         'device': 'cuda:0',
         'height': 576,
         'width': 1024,
+        'ddim_eta': 1.,
         'model_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth'
     })
     # os.chdir(path)
@@ -495,4 +528,5 @@ if __name__ == "__main__":
 
     pvd = ViewCrafter(opts)
 
+    # pvd.nvs_sparse_view_interp()
     pvd.nvs_single_view()

@@ -8,7 +8,7 @@
 # thanks!
 
 import torch.nn as nn
-from utils.diffusion_utils import instantiate_from_config
+from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config
 
 
 def disabled_train(self, mode=True):
