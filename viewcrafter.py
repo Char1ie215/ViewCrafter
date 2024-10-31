@@ -25,7 +25,7 @@ from third_party.ViewCrafter.utils.pvd_utils import *
 from omegaconf import OmegaConf
 from pytorch_lightning import seed_everything
 # from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
-from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
+# from third_party.ViewCrafter.utils.diffusion_utils import instantiate_from_config,load_model_checkpoint,image_guided_synthesis
 from pathlib import Path
 from torchvision.utils import save_image
 import base64
@@ -39,8 +39,9 @@ class ViewCrafter:
         # initialize ref images, pcd
         if not gradio:
             # self.images, self.img_ori = self.load_initial_images(image_dir=self.opts.image_dir)
-            # self.images, self.img_ori = self.process_two_images(image = self.opts.image, image1= self.opts.image2, shape = self.opts.image_shape)
-            self.images, self.img_ori = self.process_initial_images(image = self.opts.image, shape = self.opts.image_shape)
+            
+            self.images, self.img_ori = self.process_two_images(image = self.opts.image, image1= self.opts.image2, shape = self.opts.image_shape)
+            # self.images, self.img_ori = self.process_initial_images(image = self.opts.image, shape = self.opts.image_shape)
             self.run_dust3r(input_images=self.images, clean_pc=True)
         
     def run_dust3r(self, input_images,clean_pc = False):
@@ -160,8 +161,8 @@ class ViewCrafter:
             if phi[-1]==0. and theta[-1]==0. and r[-1]==0.:
                 render_results[-1] = self.img_ori
                 
-        save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
-        save_pointcloud_with_normals([imgs[-1]], [pcd[-1]], msk=None, save_path=os.path.join(self.opts.save_dir,'pcd0.ply') , mask_pc=False, reduce_pc=False)
+        # save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
+        # save_pointcloud_with_normals([imgs[-1]], [pcd[-1]], msk=None, save_path=os.path.join(self.opts.save_dir,'pcd0.ply') , mask_pc=False, reduce_pc=False)
         # diffusion_results = self.run_diffusion(render_results)
         # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
 
@@ -225,8 +226,8 @@ class ViewCrafter:
         else:
             raise KeyError(f"Invalid Mode: {self.opts.mode}")
 
-        save_video(render_results, os.path.join(self.opts.save_dir, f'render{iter}.mp4'))
-        save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd{iter}.ply') , mask_pc=True, reduce_pc=False)
+        # save_video(render_results, os.path.join(self.opts.save_dir, f'render{iter}.mp4'))
+        # save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd{iter}.ply') , mask_pc=True, reduce_pc=False)
         # diffusion_results = self.run_diffusion(render_results)
         # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion{iter}.mp4'))
         # torch.Size([25, 576, 1024, 3])
@@ -261,11 +262,13 @@ class ViewCrafter:
         render_results, viewmask = self.run_render(pcd, imgs,masks, H, W, camera_traj,num_views)
         render_results = F.interpolate(render_results.permute(0,3,1,2), size=(576, 1024), mode='bilinear', align_corners=False).permute(0,2,3,1)
         
-        for i in range(len(self.img_ori)):
-            render_results[i*(self.opts.video_length - 1)] = self.img_ori[i]
-        save_video(render_results, os.path.join(self.opts.save_dir, f'render.mp4'))
-        save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd.ply') , mask_pc=mask_pc, reduce_pc=False)
+        # for i in range(len(self.img_ori)):
+        #     render_results[i*(self.opts.video_length - 1)] = self.img_ori[i]
+        # save_video(render_results, os.path.join(self.opts.save_dir, f'render.mp4'))
+        # save_pointcloud_with_normals(imgs, pcd, msk=masks, save_path=os.path.join(self.opts.save_dir, f'pcd.ply') , mask_pc=mask_pc, reduce_pc=False)
 
+
+#no need
         # diffusion_results = []
         # print(f'Generating {len(self.img_ori)-1} clips\n')
         # for i in range(len(self.img_ori)-1 ):
@@ -411,9 +414,9 @@ class ViewCrafter:
         image = base64.b64decode(image)
         image1 = base64.b64decode(image1)
         shape = tuple(shape)
-        restored_tensor = torch.from_numpy(np.frombuffer(image, dtype=np.float32)).reshape(shape)
+        restored_tensor = torch.from_numpy(np.frombuffer(image, dtype=np.uint8)).reshape(shape)
         restored_tensor = restored_tensor.numpy().astype(np.uint8)
-        restored_tensor1 = torch.from_numpy(np.frombuffer(image1, dtype=np.float32)).reshape(shape)
+        restored_tensor1 = torch.from_numpy(np.frombuffer(image1, dtype=np.uint8)).reshape(shape)
         restored_tensor1 = restored_tensor1.numpy().astype(np.uint8)
 
         img = Image.fromarray(restored_tensor)
@@ -474,7 +477,7 @@ if __name__ == "__main__":
     from omegaconf import OmegaConf
     import os
     path = os.getcwd()
-    new = '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter'
+    new = 'third_party/ViewCrafter'
     os.chdir(new)
     data = Image.open('test/images/output.png').convert('RGB')
     data2 = Image.open('test/images/output3.png').convert('RGB')
@@ -512,7 +515,7 @@ if __name__ == "__main__":
         'd_x': [50],
         'd_y': [25],
         'batch_size': 1,
-        'ckpt_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/model.ckpt',
+        'ckpt_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/model_sparse.ckpt',
         'config': 'configs/inference_pvd_1024.yaml',
         'ddim_steps': 50,
         'video_length': 25,
@@ -528,5 +531,6 @@ if __name__ == "__main__":
 
     pvd = ViewCrafter(opts)
 
-    # pvd.nvs_sparse_view_interp()
-    pvd.nvs_single_view()
+    render_results=pvd.nvs_sparse_view_interp()
+    print("nb")
+    # pvd.nvs_single_view()
