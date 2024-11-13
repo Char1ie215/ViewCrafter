@@ -18,18 +18,39 @@ opts = OmegaConf.create({
     'batch_size': 1,
     'height': 576,
     'width': 1024,
-    'model_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth',
+    # 'model_path': '/home/haonan/clean_git/direct_human_demo/third_party/ViewCrafter/checkpoints/DUSt3R_ViTLarge_BaseDecoder_512_dpt.pth',
     'center_scale': 1.0,
     'elevation': 0,
-    'd_theta': [15],
-    'd_phi': [10],
-    'd_r': [0.2],
+    'd_theta': [-30],
+    'd_phi': [45],
+    'd_r': [-0.2],
+    'd_x':50,
+    'd_y':25,
+    'mode': 'single_view_txt'
 })
 
-device = opts.device
-dust3r_model = load_model(opts.model_path, device)  #setup duster
+# device = opts.device
+# dust3r_model = load_model(opts.model_path, device)  #setup duster
 
 #process image
+def process_initial_images(image, shape):
+        ## load images
+        ## dict_keys(['img', 'true_shape', 'idx', 'instance', 'img_ori']),张量形式
+        image = base64.b64decode(image)
+        shape = tuple(shape)
+        restored_tensor = torch.from_numpy(np.frombuffer(image, dtype=np.uint8)).reshape(shape)
+        restored_tensor = restored_tensor.numpy().astype(np.uint8)
+
+        img = Image.fromarray(restored_tensor)
+        images = process_images_directly(img, size=512,force_1024 = True)
+        img_ori = (images[0]['img_ori'].squeeze(0).permute(1,2,0)+1.)/2. # [576,1024,3] [0,1]
+
+        if len(images) == 1:
+            images = [images[0], copy.deepcopy(images[0])]
+            images[1]['idx'] = 1
+
+        return images, img_ori
+
 def process_two_images(image, image1, shape):
         
         image = base64.b64decode(image)
@@ -72,7 +93,7 @@ def run_dust3r(input_images,dust3r_model,clean_pc = True):
         return scene.clean_pointcloud()  #scene
 
 
-def nvs_sparse_view_interp(images,scene, img_ori):
+def nvs_sparse_view_interp(images,scene, img_ori, video_length):
 
         c2ws = scene.get_im_poses().detach()
         principal_points = scene.get_principal_points().detach()
@@ -96,7 +117,6 @@ def nvs_sparse_view_interp(images,scene, img_ori):
             mask_pc = True
 
         imgs = np.array(scene.imgs)
-        video_length = 25
         camera_traj,num_views = generate_traj_interp(c2ws, H, W, focals, principal_points, video_length, device='cuda:0')
         render_results, viewmask = run_render(pcd, imgs,masks, H, W, camera_traj,num_views)
         render_results = F.interpolate(render_results.permute(0,3,1,2), size=(576, 1024), mode='bilinear', align_corners=False).permute(0,2,3,1)
@@ -117,6 +137,70 @@ def nvs_sparse_view_interp(images,scene, img_ori):
         # diffusion_results = torch.cat(diffusion_results)
         # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, f'diffusion.mp4'))
         # torch.Size([25, 576, 1024, 3])
+        return render_results
+
+def nvs_single_view(scene, images, video_length, img_ori, gradio=False):
+
+        c2ws = scene.get_im_poses().detach()[1:] 
+        principal_points = scene.get_principal_points().detach()[1:] #cx cy
+        focals = scene.get_focals().detach()[1:] 
+        shape = images[0]['true_shape']
+        H, W = int(shape[0][0]), int(shape[0][1])
+        pcd = [i.detach() for i in scene.get_pts3d(clip_thred=None)] # a list of points of size whc
+        depth = [i.detach() for i in scene.get_depthmaps()]
+        depth_avg = depth[-1][H//2,W//2] 
+        radius = depth_avg * 1.
+
+        ## change coordinate
+        c2ws,pcd =  world_point_to_obj(poses=c2ws, points=torch.stack(pcd), k=-1, r=radius, elevation=5, device='cuda:0')
+
+        imgs = np.array(scene.imgs)
+        
+        masks = None
+        code_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+        path = os.path.join(code_dir, 'third_party/ViewCrafter/test/trajs/loop2.txt')
+        if opts.mode == 'single_view_nbv':
+            ## 输入candidate->渲染mask->最大mask对应的pose作为nbv
+            ## nbv模式下self.opts.d_theta[0], self.opts.d_phi[0]代表search space中的网格theta, phi之间的间距; self.opts.d_phi[0]的符号代表方向,分为左右两个方向
+            ## FIXME hard coded candidate view数量, 以left为例,第一次迭代从[左,左上]中选取, 从第二次开始可以从[左,左上,左下]中选取
+            num_candidates = 2
+            candidate_poses,thetas,phis = generate_candidate_poses(c2ws, H, W, focals, principal_points, self.opts.d_theta[0], self.opts.d_phi[0],num_candidates, self.device)
+            _, viewmask = self.run_render([pcd[-1]], [imgs[-1]],masks, H, W, candidate_poses,num_candidates)
+            nbv_id = torch.argmin(viewmask.sum(dim=[1,2,3])).item()
+            save_image( viewmask.permute(0,3,1,2), os.path.join(self.opts.save_dir,f"candidate_mask0_nbv{nbv_id}.png"), normalize=True, value_range=(0, 1))
+            theta_nbv = thetas[nbv_id]
+            phi_nbv = phis[nbv_id]
+            # generate camera trajectory from T_curr to T_nbv
+            camera_traj,num_views = generate_traj_specified(c2ws, H, W, focals, principal_points, theta_nbv, phi_nbv, self.opts.d_r[0],self.opts.video_length, self.device)
+            # 重置elevation
+            self.opts.elevation -= theta_nbv
+        elif opts.mode == 'single_view_target':
+            camera_traj,num_views = generate_traj_specified(c2ws, H, W, focals, principal_points, self.opts.d_theta[0], self.opts.d_phi[0], self.opts.d_r[0],self.opts.d_x[0]*depth_avg/focals.item(),self.opts.d_y[0]*depth_avg/focals.item(),self.opts.video_length, self.device)
+        elif opts.mode == 'single_view_txt':
+            if not gradio:
+                with open(path, 'r') as file:
+                    lines = file.readlines()
+                    phi = [float(i) for i in lines[0].split()]
+                    theta = [float(i) for i in lines[1].split()]
+                    r = [float(i) for i in lines[2].split()]
+            else: 
+                phi, theta, r = gradio_traj
+            camera_traj,num_views = generate_traj_txt(c2ws, H, W, focals, principal_points, phi, theta, r, video_length, device='cuda:0',viz_traj=False)
+        else:
+            raise KeyError(f"Invalid Mode: {opts.mode}")
+
+        render_results, viewmask = run_render([pcd[-1]], [imgs[-1]],masks, H, W, camera_traj,num_views)
+        render_results = F.interpolate(render_results.permute(0,3,1,2), size=(576, 1024), mode='bilinear', align_corners=False).permute(0,2,3,1)
+        render_results[0] = img_ori
+        if opts.mode == 'single_view_txt':
+            if phi[-1]==0. and theta[-1]==0. and r[-1]==0.:
+                render_results[-1] = img_ori
+                
+        # save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
+        # save_pointcloud_with_normals([imgs[-1]], [pcd[-1]], msk=None, save_path=os.path.join(self.opts.save_dir,'pcd0.ply') , mask_pc=False, reduce_pc=False)
+        # diffusion_results = self.run_diffusion(render_results)
+        # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
+
         return render_results
 
 def run_render(pcd, imgs,masks, H, W, camera_traj,num_views,nbv=False):
