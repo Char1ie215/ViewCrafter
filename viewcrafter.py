@@ -161,7 +161,7 @@ class ViewCrafter:
             if phi[-1]==0. and theta[-1]==0. and r[-1]==0.:
                 render_results[-1] = self.img_ori
                 
-        # save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
+        save_video(render_results, os.path.join(self.opts.save_dir, 'render0.mp4'))
         # save_pointcloud_with_normals([imgs[-1]], [pcd[-1]], msk=None, save_path=os.path.join(self.opts.save_dir,'pcd0.ply') , mask_pc=False, reduce_pc=False)
         # diffusion_results = self.run_diffusion(render_results)
         # save_video((diffusion_results + 1.0) / 2.0, os.path.join(self.opts.save_dir, 'diffusion0.mp4'))
