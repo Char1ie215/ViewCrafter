@@ -83,8 +83,8 @@ def run_dust3r(input_images,dust3r_model,clean_pc = True):
 
         mode = GlobalAlignerMode.PointCloudOptimizer #if len(self.images) > 2 else GlobalAlignerMode.PairViewer
         scene = global_aligner(output, device=device, mode=mode)
-        # if mode == GlobalAlignerMode.PointCloudOptimizer:
-        #     loss = scene.compute_global_alignment(init='mst', niter=10, schedule='cosine', lr=0.01)
+        if mode == GlobalAlignerMode.PointCloudOptimizer:
+            loss = scene.compute_global_alignment(init='mst', niter=10, schedule='cosine', lr=0.01)
 
         if clean_pc:
             scene = scene.clean_pointcloud()
